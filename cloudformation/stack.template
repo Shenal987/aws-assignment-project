@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cloudformation template for creating AWS S3 Bucket
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Name for s3 bucket (Name must begin and end with a letter or number and consist only of lowercase letters, numbers, and hyphens (-).)
+    AllowedPattern: (?=^.{3,63}$)^[a-z0-9][a-z0-9-]*[a-z0-9]
+    ConstraintDescription: Name must begin and end with a letter or number and consist only of lowercase letters, numbers, and hyphens (-).
+
+Resources:
+  S3LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${BucketName}-access-logs
+      AccessControl: LogDeliveryWrite
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This is a logging bucket neglect server access log property"
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Sub ${BucketName}-s3
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3LogBucket
+        LogFilePrefix: 'access_logs/'
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyPublicReadAccess
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - "s3:GetObject"
+              - "s3:ListBucket"
+            Resource:
+              - !Sub "arn:aws:s3:::${S3Bucket}/*"
+              - !Sub "arn:aws:s3:::${S3Bucket}"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+  S3LogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3LogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowS3AccessLogging
+            Effect: Allow
+            Principal:
+              Service: "logging.s3.amazonaws.com"
+            Action: "s3:PutObject"
+            Resource: !Sub "arn:aws:s3:::${S3LogBucket}/*"
+
+Outputs:
+  BucketARN:
+    Description: The arn for the bucket that got created
+    Value: !GetAtt S3Bucket.Arn
+
+  LogBucketARN:
+    Description: The arn for the access log bucket that got created
+    Value: !GetAtt S3LogBucket.Arn
